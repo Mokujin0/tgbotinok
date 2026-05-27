@@ -1,0 +1,32 @@
+{
+  "timezone": "Europe/Moscow",
+  "jobs": [
+    {
+      "id": "morning_greeting",
+      "description": "Приветствие группе в 8:00 МСК (5:00 UTC)",
+      "cron": {
+        "hour": 8,
+        "minute": 0
+      },
+      "action": "send_greeting"
+    },
+    {
+      "id": "daily_report",
+      "description": "Отчёт админу в 23:55 МСК (20:55 UTC)",
+      "cron": {
+        "hour": 23,
+        "minute": 55
+      },
+      "action": "send_daily_report"
+    },
+    {
+      "id": "check_watchlist",
+      "description": "Проверка отслеживаемых доменов каждые 6 часов",
+      "cron": {
+        "hour": "*/6",
+        "minute": 0
+      },
+      "action": "check_watchlist"
+    }
+  ]
+}

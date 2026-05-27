@@ -1,0 +1,15 @@
+{
+  "bot_name": "DomainCheckerBot",
+  "parse_mode": "HTML",
+  "poll_interval_seconds": 1,
+  "data_dir": "data",
+  "users_csv": "data/users.csv",
+  "logs_dir": "data/logs",
+  "watchlist_file": "data/watchlist.json",
+  "stats_file": "data/daily_stats.json",
+  "greeting_file": "data/greeting.txt",
+  "reports_dir": "data/reports",
+  "similar_tlds": [".com", ".net", ".org", ".io", ".ru"],
+  "search_prefixes": ["", "get", "my", "go", "try"],
+  "search_suffixes": ["", "app", "hub", "online", "shop"]
+}
