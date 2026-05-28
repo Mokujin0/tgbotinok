@@ -1,5 +1,3 @@
-"""Проверка домена через Namecheap API."""
-
 import xml.etree.ElementTree as ET
 
 import requests
@@ -53,3 +51,44 @@ def check_domain_namecheap(domain: str) -> dict:
     available_str = attr.get("Available", "")
     available = available_str.lower() == "true"
     return {"available": available, "error": None}
+
+
+def check_domains_namecheap_bulk(domains: list[str]) -> dict:
+    """
+    Массовая проверка списка доменов (до 50 шт) через Sandbox API.
+    Возвращает словарь {domain: available_bool} или {'error': msg}.
+    """
+    if not domains:
+        return {}
+    if not all([NAMECHEAP_API_USER, NAMECHEAP_API_KEY, NAMECHEAP_CLIENT_IP]):
+        return {"error": "Namecheap: заполните переменные в .env"}
+
+    url = NAMECHEAP_API_URL
+    params = {
+        "ApiUser": NAMECHEAP_API_USER,
+        "ApiKey": NAMECHEAP_API_KEY,
+        "UserName": NAMECHEAP_API_USER,
+        "ClientIp": NAMECHEAP_CLIENT_IP,
+        "Command": "namecheap.domains.check",
+        "DomainList": ",".join(domains),
+    }
+
+    try:
+        resp = requests.get(url, params=params, timeout=30)
+        resp.raise_for_status()
+        root = ET.fromstring(resp.text)
+    except (requests.RequestException, ET.ParseError) as e:
+        return {"error": str(e)}
+
+    ns = {"nc": "http://api.namecheap.com/xml.response"}
+    results = {}
+
+    check_nodes = root.findall(".//nc:DomainCheckResult", ns)
+    if not check_nodes:
+        return {"error": "Отсутствуют результаты проверки"}
+
+    for node in check_nodes:
+        domain_name = node.get("Domain", "").lower()
+        results[domain_name] = node.get("Available", "").lower() == "true"
+
+    return results

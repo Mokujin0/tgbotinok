@@ -15,7 +15,6 @@ def _user(message: dict) -> dict:
 
 
 def _reply(chat_id: int, text: str) -> None:
-    # Быстрая функция чтобы ответить человеку
     telegram_api.send_message(chat_id, text)
     message_logger.log_message(chat_id, text, direction="out")
 
@@ -52,9 +51,9 @@ def handle_update(update: dict) -> None:
 
     message = update["message"]
     chat_id = _chat_id(message)
-    _register_user(message) # регистрируем
+    _register_user(message)
 
-    stats.inc("messages") # считаем сообщения
+    stats.inc("messages")
 
     # Если прислали текст
     if "text" in message:
@@ -69,7 +68,7 @@ def handle_update(update: dict) -> None:
         message_logger.log_message(chat_id, f"location {loc}", direction="in")
         address = geolocation.get_address(loc["latitude"], loc["longitude"])
         
-        # Собираем текст адреса
+        
         txt = f"📍 <b>Ваша локация</b>\n"
         txt = txt + f"Широта: <code>{loc['latitude']}</code>\n"
         txt = txt + f"Долгота: <code>{loc['longitude']}</code>\n\n"

@@ -1,10 +1,13 @@
 import json
 import re
+import time
 import whois
 from pathlib import Path
 
 from utils.config_loader import CONFIG, ROOT_DIR
-from utils.namecheap_api import check_domain_namecheap
+from utils.namecheap_api import check_domain_namecheap, check_domains_namecheap_bulk
+
+WHOIS_DELAY = 1.2
 
 DOMAIN_RE = re.compile(r"^[a-z0-9]([a-z0-9\-]{0,61}[a-z0-9])?(\.[a-z]{2,})+$", re.I)
 
@@ -19,6 +22,8 @@ def _whois_lookup(domain: str) -> dict:
         err_msg = str(e).lower()
         if "no match" in err_msg or "not found" in err_msg or "not registered" in err_msg or "no data found" in err_msg:
             return {"available": True, "error": None}
+        if "no address associated with hostname" in err_msg or "connection refused" in err_msg:
+            return {"available": None, "error": "WHOIS timeout/rate limit"}
         return {"available": None, "error": str(e)}
 
 
@@ -82,12 +87,26 @@ def search_available(keyword: str) -> str:
         return "❌ Укажите ключевое слово: <code>/search myshop</code>"
 
     free = []
-    for d in domains:
-        r = _whois_lookup(d)
-        if r.get("available") is True:
-            free.append(d)
-        if len(free) >= 10:
-            break
+
+    # Пытаемся проверить массово через Namecheap Sandbox API (до 50 доменов)
+    nc_results = check_domains_namecheap_bulk(domains)
+
+    if "error" not in nc_results:
+        for d in domains:
+            if nc_results.get(d) is True:
+                free.append(d)
+            if len(free) >= 10:
+                break
+    else:
+        # Фолбек на WHOIS с задержкой, если Sandbox API не настроен/выдал ошибку
+        for i, d in enumerate(domains):
+            if i > 0:
+                time.sleep(WHOIS_DELAY)
+            r = _whois_lookup(d)
+            if r.get("available") is True:
+                free.append(d)
+            if len(free) >= 10:
+                break
 
     if not free:
         return f"😔 Свободных доменов по запросу «{keyword}» не найдено (проверено {len(domains)})."
@@ -150,25 +169,40 @@ def remove_watch(chat_id: int, domain: str) -> str:
 
 
 def get_user_watchlist(chat_id: int) -> list:
-    """Получить список отслеживаемых доменов пользователя."""
     data = load_watchlist()
     return data.get(str(chat_id), [])
 
 
 def check_all_watchlist_and_notify(send_fn) -> int:
-    """
-    Проверяет все домены из watchlist.
-    send_fn(chat_id, text) — функция отправки сообщения.
-    Возвращает число отправленных уведомлений.
-    """
     data = load_watchlist()
     notified = 0
+
+    # Собираем все домены из всех списков отслеживания
+    all_domains = set()
+    for domains in data.values():
+        all_domains.update(domains)
+
+    all_domains_list = list(all_domains)
+    nc_results = {}
+
+    # Проверяем пачками по 50 доменов (лимит API Namecheap)
+    for i in range(0, len(all_domains_list), 50):
+        batch = all_domains_list[i:i+50]
+        res = check_domains_namecheap_bulk(batch)
+        if "error" not in res:
+            nc_results.update(res)
+        time.sleep(1) # Небольшая пауза между батчами Sandbox API
 
     for chat_id, domains in list(data.items()):
         still_watching = []
         for domain in domains:
-            r = _whois_lookup(domain)
-            if r.get("available") is True:
+            is_available = nc_results.get(domain)
+            if is_available is None:
+                time.sleep(WHOIS_DELAY)
+                r = _whois_lookup(domain)
+                is_available = r.get("available")
+
+            if is_available is True:
                 send_fn(
                     int(chat_id),
                     f"🎉 Домен <code>{domain}</code> стал <b>свободным</b>!",
