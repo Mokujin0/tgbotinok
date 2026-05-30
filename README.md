@@ -82,7 +82,11 @@ cp .env.example .env
 
 ## API
 
-- WHOIS: python-whois library
-- Namecheap Sandbox API
+- **RDAP** (rdap.org) — бесплатно, без ключа, без депозита. Используется по умолчанию.
+- WHOIS: python-whois library (системная утилита `whois`)
+- WhoisXML Domain Availability API (опционально, для большей точности)
+- Namecheap API (опционально)
 
-Если API-ключи Namecheap не заданы, бот всё равно будет проверять домены через локальный WHOIS.
+Источники доступности опрашиваются по очереди: сначала бесплатный **RDAP**, затем WhoisXML, Namecheap и локальный WHOIS. Опрос прекращается на первом однозначном ответе.
+
+`WHOIS_API_KEY` (WhoisXML) и ключи Namecheap **необязательны** — без них бот работает на RDAP + локальном WHOIS бесплатно. Namecheap Sandbox нужен только для проверки интеграции: он не отражает реальные регистрации и не должен быть источником истины для `/search` и отслеживания.
