@@ -1,3 +1,5 @@
+import html
+
 from utils import domain_service, geolocation, message_logger, stats, users, user_state
 from utils import telegram_api
 
@@ -17,6 +19,17 @@ def _user(message: dict) -> dict:
 def _reply(chat_id: int, text: str) -> None:
     telegram_api.send_message(chat_id, text)
     message_logger.log_message(chat_id, text, direction="out")
+
+
+def _notice(chat_id: int, text: str) -> None:
+    try:
+        telegram_api.send_message(chat_id, text)
+    except Exception as e:
+        print(f"[api] не удалось отправить уведомление: {e}")
+
+
+def _h(value) -> str:
+    return html.escape(str(value))
 
 
 def _safe_edit(chat_id: int, message_id: int, text: str, reply_markup: dict = None) -> None:
@@ -55,14 +68,12 @@ def handle_update(update: dict) -> None:
 
     stats.inc("messages")
 
-    # Если прислали текст
     if "text" in message:
         text = message["text"].strip()
         message_logger.log_message(chat_id, text, direction="in")
         _handle_text(chat_id, text, message)
         return
 
-    # Если прислали локацию
     if "location" in message:
         loc = message["location"]
         message_logger.log_message(chat_id, f"location {loc}", direction="in")
@@ -154,7 +165,7 @@ def _handle_callback(callback_query: dict) -> None:
         if watchlist:
             text = f"👁️ <b>Мой список отслеживания</b>\n\nДоменов: <code>{len(watchlist)}</code>\n\n"
             for d in watchlist:
-                text = text + f"• <code>{d}</code>\n"
+                text = text + f"• <code>{_h(d)}</code>\n"
             buttons = [
                 [telegram_api.make_inline_button("➕ Добавить новый", "watch_add")],
                 [telegram_api.make_inline_button("🗑 Удалить домен", "watch_delete_menu")],
@@ -181,7 +192,7 @@ def _handle_callback(callback_query: dict) -> None:
         if watchlist:
             text = f"👁️ <b>Мой список отслеживания</b>\n\nДоменов в списке: <code>{len(watchlist)}</code>\n\n"
             for d in watchlist:
-                text = text + f"• <code>{d}</code>\n"
+                text = text + f"• <code>{_h(d)}</code>\n"
             text += "\n\nЧто делать?"
             buttons = [
                 [telegram_api.make_inline_button("➕ Добавить новый", "watch_add")],
@@ -202,9 +213,9 @@ def _handle_callback(callback_query: dict) -> None:
 
     if data.startswith("check_"):
         domain = data.replace("check_", "")
+        telegram_api.answer_callback(callback_id, "🔎 Проверяю...")
         result = domain_service.check_domain(domain)
-        reply_text = f"✅ <b>Проверка домена: {domain}</b>\n\n{result}"
-        telegram_api.answer_callback(callback_id, "✓ Выполнено")
+        reply_text = f"✅ <b>Проверка домена: {_h(domain)}</b>\n\n{result}"
         if message_id and chat_id:
             _safe_edit(chat_id, message_id, reply_text)
         else:
@@ -221,9 +232,9 @@ def _handle_callback(callback_query: dict) -> None:
 
     elif data.startswith("search_"):
         keyword = data.replace("search_", "")
+        telegram_api.answer_callback(callback_id, "🔍 Ищу...")
         result = domain_service.search_available(keyword)
-        reply_text = f"🔍 <b>Поиск доменов: {keyword}</b>\n\n{result}"
-        telegram_api.answer_callback(callback_id, "✓ Поиск выполнен")
+        reply_text = f"🔍 <b>Поиск доменов: {_h(keyword)}</b>\n\n{result}"
         if message_id and chat_id:
             _safe_edit(chat_id, message_id, reply_text)
         else:
@@ -278,7 +289,7 @@ def _handle_callback(callback_query: dict) -> None:
         if watchlist:
             text = f"👁️ <b>Мой список отслеживания</b>\n\nДоменов в списке: <code>{len(watchlist)}</code>\n\n"
             for d in watchlist:
-                text = text + f"• <code>{d}</code>\n"
+                text = text + f"• <code>{_h(d)}</code>\n"
             text += "\n\nЧто делать?"
             buttons = [
                 [telegram_api.make_inline_button("➕ Добавить новый", "watch_add")],
@@ -306,8 +317,8 @@ def _handle_callback(callback_query: dict) -> None:
         profile_text = (
             f"🪪 <b>Ваш профиль</b>\n"
             f"ID: <code>{chat_id}</code>\n"
-            f"Username: @{username}\n"
-            f"Имя: {u.get('first_name', '—')}"
+            f"Username: @{_h(username)}\n"
+            f"Имя: {_h(u.get('first_name', '—'))}"
         )
         buttons = [[telegram_api.make_inline_button("← Назад в меню", "menu")]]
         reply_markup = telegram_api.make_inline_keyboard(buttons)
@@ -325,8 +336,9 @@ def _handle_text(chat_id: int, text: str, message: dict) -> None:
 
     if state == "waiting_domain_check":
         domain = text.strip()
+        _notice(chat_id, "🔎 Проверяю домен, секунду...")
         result = domain_service.check_domain(domain)
-        reply_text = f"✅ <b>Результат проверки: {domain}</b>\n\n{result}"
+        reply_text = f"✅ <b>Результат проверки: {_h(domain)}</b>\n\n{result}"
         buttons = [
             [telegram_api.make_inline_button(f"👁️ Отслеживать", f"watch_{domain}")],
             [telegram_api.make_inline_button("← Главное меню", "menu")],
@@ -339,8 +351,9 @@ def _handle_text(chat_id: int, text: str, message: dict) -> None:
 
     if state == "waiting_keyword_search":
         keyword = text.strip()
+        _notice(chat_id, "🔍 Ищу свободные домены, это займёт несколько секунд...")
         result = domain_service.search_available(keyword)
-        reply_text = f"🔍 <b>Результаты поиска: {keyword}</b>\n\n{result}"
+        reply_text = f"🔍 <b>Результаты поиска: {_h(keyword)}</b>\n\n{result}"
         buttons = [
             [telegram_api.make_inline_button("🔄 Новый поиск", "menu_search")],
             [telegram_api.make_inline_button("← Главное меню", "menu")],
@@ -389,8 +402,8 @@ def _handle_text(chat_id: int, text: str, message: dict) -> None:
         text = (
             f"🪪 <b>Ваш профиль</b>\n"
             f"ID: <code>{chat_id}</code>\n"
-            f"Username: @{username}\n"
-            f"Имя: {u.get('first_name', '—')}"
+            f"Username: @{_h(username)}\n"
+            f"Имя: {_h(u.get('first_name', '—'))}"
         )
         buttons = [
             [telegram_api.make_inline_button("← Назад в меню", "menu")],
@@ -414,8 +427,9 @@ def _handle_text(chat_id: int, text: str, message: dict) -> None:
             return
         domain = parts[1].strip()
         stats.inc("domains_checked")
+        _notice(chat_id, "🔎 Проверяю домен, секунду...")
         result = domain_service.check_domain(domain)
-        reply_text = f"✅ <b>Результат проверки: {domain}</b>\n\n{result}"
+        reply_text = f"✅ <b>Результат проверки: {_h(domain)}</b>\n\n{result}"
         buttons = [
             [telegram_api.make_inline_button(f"👁️ Отслеживать", f"watch_{domain}")],
             [telegram_api.make_inline_button("← Меню", "menu")],
@@ -433,8 +447,9 @@ def _handle_text(chat_id: int, text: str, message: dict) -> None:
             _reply(chat_id, "🔍 <b>Введите ключевое слово</b>\n\nПример: <code>shop</code>")
             return
         keyword = parts[1].strip()
+        _notice(chat_id, "🔍 Ищу свободные домены, это займёт несколько секунд...")
         result = domain_service.search_available(keyword)
-        reply_text = f"🔍 <b>Результаты поиска: {keyword}</b>\n\n{result}"
+        reply_text = f"🔍 <b>Результаты поиска: {_h(keyword)}</b>\n\n{result}"
         buttons = [
             [telegram_api.make_inline_button("🔄 Новый поиск", "menu_search")],
             [telegram_api.make_inline_button("← Меню", "menu")],
@@ -452,7 +467,7 @@ def _handle_text(chat_id: int, text: str, message: dict) -> None:
             if watchlist:
                 reply_text = f"👁️ <b>Мой список отслеживания</b>\n\nДоменов в списке: <code>{len(watchlist)}</code>\n\n"
                 for d in watchlist:
-                    reply_text = reply_text + f"• <code>{d}</code>\n"
+                    reply_text = reply_text + f"• <code>{_h(d)}</code>\n"
                 reply_text += "\n\nЧто делать?"
                 buttons = [
                     [telegram_api.make_inline_button("➕ Добавить новый", "watch_add")],
