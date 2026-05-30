@@ -1,38 +1,31 @@
-"""Управление состояниями пользователей (ожидание ввода)."""
-
-import json
 from pathlib import Path
 
-STATE_FILE = Path("data/user_states.json")
+from utils import storage
+from utils.config_loader import CONFIG, ROOT_DIR
+
+
+def _state_path() -> Path:
+    return ROOT_DIR / CONFIG.get("user_states_file", "data/user_states.json")
 
 
 def _load_states() -> dict:
-    """Загрузить состояния из файла."""
-    if STATE_FILE.exists():
-        with open(STATE_FILE, "r", encoding="utf-8") as f:
-            return json.load(f)
-    return {}
+    return storage.read_json(_state_path(), default={}) or {}
 
 
 def _save_states(states: dict) -> None:
-    """Сохранить состояния в файл."""
-    STATE_FILE.parent.mkdir(exist_ok=True)
-    with open(STATE_FILE, "w", encoding="utf-8") as f:
-        json.dump(states, f, ensure_ascii=False, indent=2)
+    storage.write_json(_state_path(), states)
 
 
 def set_state(chat_id: int, state: str, data: dict = None) -> None:
-    """Установить состояние пользователя."""
-    states = _load_states()
-    states[str(chat_id)] = {
-        "state": state,
-        "data": data or {}
-    }
-    _save_states(states)
+    def mutator(states):
+        states = states or {}
+        states[str(chat_id)] = {"state": state, "data": data or {}}
+        return states
+
+    storage.update_json(_state_path(), mutator, default={})
 
 
 def get_state(chat_id: int) -> tuple:
-    """Получить состояние пользователя. Возвращает (state, data)."""
     states = _load_states()
     if str(chat_id) in states:
         info = states[str(chat_id)]
@@ -41,7 +34,9 @@ def get_state(chat_id: int) -> tuple:
 
 
 def clear_state(chat_id: int) -> None:
-    """Очистить состояние пользователя."""
-    states = _load_states()
-    states.pop(str(chat_id), None)
-    _save_states(states)
+    def mutator(states):
+        states = states or {}
+        states.pop(str(chat_id), None)
+        return states
+
+    storage.update_json(_state_path(), mutator, default={})

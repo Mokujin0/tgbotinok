@@ -1,7 +1,7 @@
-import json
 from datetime import date
 from pathlib import Path
 
+from utils import storage
 from utils.config_loader import CONFIG, ROOT_DIR
 
 
@@ -19,34 +19,26 @@ def _default_stats() -> dict:
     }
 
 
-def _load() -> dict:
-    path = _stats_path()
-    if not path.exists():
+def _normalize(data) -> dict:
+    if not data:
         return _default_stats()
-    with open(path, "r", encoding="utf-8") as f:
-        data = json.load(f)
-    today = str(date.today())
-    if data.get("date") != today:
+    if data.get("date") != str(date.today()):
         return _default_stats()
     return data
 
 
-def _save(data: dict) -> None:
-    path = _stats_path()
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with open(path, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
-
-
 def inc(field: str, amount: int = 1) -> None:
-    data = _load()
-    data[field] = data.get(field, 0) + amount
-    data["date"] = str(date.today())
-    _save(data)
+    def mutator(data):
+        data = _normalize(data)
+        data[field] = data.get(field, 0) + amount
+        data["date"] = str(date.today())
+        return data
+
+    storage.update_json(_stats_path(), mutator, default=None)
 
 
 def get_today_stats() -> dict:
-    return _load()
+    return _normalize(storage.read_json(_stats_path(), default=None))
 
 
 def build_report_text() -> str:
