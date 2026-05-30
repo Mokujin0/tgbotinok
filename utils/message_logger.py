@@ -1,5 +1,3 @@
-"""История сообщений — отдельный .log файл на каждого пользователя."""
-
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -13,7 +11,6 @@ def _user_log_path(chat_id: int) -> Path:
 
 
 def log_message(chat_id: int, text: str, direction: str = "in") -> None:
-    """direction: in — от пользователя, out — от бота."""
     path = _user_log_path(chat_id)
     ts = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
     line = f"[{ts}] [{direction}] {text}\n"

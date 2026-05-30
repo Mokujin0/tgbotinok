@@ -1,12 +1,9 @@
-"""Загрузка config.json, tasks.json и переменных из .env."""
-
 import json
 from pathlib import Path
 
 from decouple import config
 from dotenv import load_dotenv
 
-# Корень проекта — папка на уровень выше utils/
 ROOT_DIR = Path(__file__).resolve().parent.parent
 load_dotenv(ROOT_DIR / ".env")
 

@@ -1,5 +1,3 @@
-"""Работа с Telegram Bot API через requests (без aiogram)."""
-
 import requests
 
 from utils.config_loader import CONFIG, TELEGRAM_TOKEN
@@ -44,20 +42,14 @@ def send_document(chat_id, file_path: str, caption: str = "") -> dict:
 
 
 def make_inline_button(text: str, callback_data: str) -> dict:
-    """Создать inline кнопку."""
     return {"text": text, "callback_data": callback_data}
 
 
 def make_inline_keyboard(buttons: list) -> dict:
-    """Создать inline клавиатуру из списка списков кнопок.
-
-    buttons: [[button1, button2], [button3]]
-    """
     return {"inline_keyboard": buttons}
 
 
 def answer_callback(callback_query_id: str, text: str = "", show_alert: bool = False) -> dict:
-    """Ответить на callback_query (нажатие кнопки)."""
     payload = {
         "callback_query_id": callback_query_id,
         "text": text,
@@ -67,7 +59,6 @@ def answer_callback(callback_query_id: str, text: str = "", show_alert: bool = F
 
 
 def edit_message_text(chat_id: int, message_id: int, text: str, reply_markup: dict = None) -> dict:
-    """Отредактировать текст существующего сообщения."""
     payload = {
         "chat_id": chat_id,
         "message_id": message_id,
@@ -77,4 +68,3 @@ def edit_message_text(chat_id: int, message_id: int, text: str, reply_markup: di
     if reply_markup:
         payload["reply_markup"] = reply_markup
     return _post("editMessageText", payload)
-

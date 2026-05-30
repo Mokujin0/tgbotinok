@@ -1,5 +1,3 @@
-"""Периодические задачи через APScheduler."""
-
 from datetime import date
 from pathlib import Path
 
