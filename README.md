@@ -48,7 +48,7 @@ sudo pacman -S whois
 
 ```bash
 # Переход в папку проекта
-cd /home/antarctica/tgbotinok
+cd /home/user/tgbotinok
 
 # Создание и активация виртуального окружения
 python -m venv .venv
