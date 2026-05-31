@@ -1,6 +1,8 @@
 import html
+import os
+import tempfile
 
-from utils import domain_service, geolocation, message_logger, stats, users, user_state
+from utils import domain_service, geolocation, history, message_logger, stats, users, user_state
 from utils import telegram_api
 
 
@@ -30,6 +32,48 @@ def _notice(chat_id: int, text: str) -> None:
 
 def _h(value) -> str:
     return html.escape(str(value))
+
+
+def _history_screen(chat_id: int):
+    items = history.get_history(chat_id)
+    watched = set(domain_service.get_user_watchlist(chat_id))
+    if not items:
+        text = "🕓 <b>История проверок</b>\n\nПока пусто. Проверьте какой-нибудь домен!"
+        buttons = [[telegram_api.make_inline_button("← Назад", "menu")]]
+        return text, buttons
+    text = "🕓 <b>История проверок</b>\n\n"
+    buttons = []
+    for d in items:
+        star = " ★" if d in watched else ""
+        text += f"• <code>{_h(d)}</code>{star}\n"
+        buttons.append([telegram_api.make_inline_button(f"🔁 {d}", f"check_{d}")])
+    text += "\n★ — уже в отслеживании"
+    buttons.append([telegram_api.make_inline_button("🗑 Очистить", "history_clear")])
+    buttons.append([telegram_api.make_inline_button("← Назад", "menu")])
+    return text, buttons
+
+
+def _export_watchlist(chat_id: int) -> None:
+    domains = domain_service.get_user_watchlist(chat_id)
+    if not domains:
+        _reply(chat_id, "📭 Ваш список отслеживания пуст, экспортировать нечего.")
+        return
+    tmp_dir = tempfile.gettempdir()
+    path = os.path.join(tmp_dir, f"watchlist_{chat_id}.txt")
+    with open(path, "w", encoding="utf-8") as f:
+        for d in domains:
+            f.write(d + "\n")
+    try:
+        telegram_api.send_document(chat_id, path, caption="📤 Ваш список отслеживания")
+        message_logger.log_message(chat_id, "export watchlist", direction="out")
+    except Exception as e:
+        print(f"[export] ошибка: {e}")
+        _reply(chat_id, "⚠️ Не удалось отправить файл.")
+    finally:
+        try:
+            os.remove(path)
+        except OSError:
+            pass
 
 
 def _safe_edit(chat_id: int, message_id: int, text: str, reply_markup: dict = None) -> None:
@@ -215,6 +259,7 @@ def _handle_callback(callback_query: dict) -> None:
         domain = data.replace("check_", "")
         telegram_api.answer_callback(callback_id, "🔎 Проверяю...")
         result = domain_service.check_domain(domain)
+        history.add_entry(chat_id, domain.lower())
         reply_text = f"✅ <b>Проверка домена: {_h(domain)}</b>\n\n{result}"
         if message_id and chat_id:
             _safe_edit(chat_id, message_id, reply_text)
@@ -250,6 +295,8 @@ def _handle_callback(callback_query: dict) -> None:
             [telegram_api.make_inline_button("✅ Проверить домен", "menu_check")],
             [telegram_api.make_inline_button("🔍 Найти домены", "menu_search")],
             [telegram_api.make_inline_button("👁️ Отслеживание", "menu_watch")],
+            [telegram_api.make_inline_button("🕓 История", "menu_history")],
+            [telegram_api.make_inline_button("📤 Экспорт списка", "menu_export")],
             [telegram_api.make_inline_button("🪪 Мой профиль", "menu_profile")],
         ]
         reply_markup = telegram_api.make_inline_keyboard(buttons)
@@ -328,6 +375,28 @@ def _handle_callback(callback_query: dict) -> None:
         else:
             _reply(chat_id, profile_text)
 
+    elif data == "menu_history":
+        text_out, buttons = _history_screen(chat_id)
+        reply_markup = telegram_api.make_inline_keyboard(buttons)
+        telegram_api.answer_callback(callback_id)
+        if message_id and chat_id:
+            _safe_edit(chat_id, message_id, text_out, reply_markup)
+        else:
+            telegram_api.send_message(chat_id, text_out, reply_markup=reply_markup)
+            message_logger.log_message(chat_id, text_out, direction="out")
+
+    elif data == "history_clear":
+        history.clear_history(chat_id)
+        telegram_api.answer_callback(callback_id, "🗑 История очищена")
+        text_out, buttons = _history_screen(chat_id)
+        reply_markup = telegram_api.make_inline_keyboard(buttons)
+        if message_id and chat_id:
+            _safe_edit(chat_id, message_id, text_out, reply_markup)
+
+    elif data == "menu_export":
+        telegram_api.answer_callback(callback_id, "📤 Готовлю файл...")
+        _export_watchlist(chat_id)
+
 
 def _handle_text(chat_id: int, text: str, message: dict) -> None:
     u = _user(message)
@@ -335,9 +404,22 @@ def _handle_text(chat_id: int, text: str, message: dict) -> None:
     state, state_data = user_state.get_state(chat_id)
 
     if state == "waiting_domain_check":
+        parts = text.replace(",", " ").split()
+        user_state.clear_state(chat_id)
+        if len(parts) > 1:
+            _notice(chat_id, "🔎 Проверяю домены, секунду...")
+            result = domain_service.check_domains_bulk(parts)
+            for d in parts:
+                history.add_entry(chat_id, d.strip().lower().strip(","))
+            buttons = [[telegram_api.make_inline_button("← Главное меню", "menu")]]
+            reply_markup = telegram_api.make_inline_keyboard(buttons)
+            telegram_api.send_message(chat_id, result, reply_markup=reply_markup)
+            message_logger.log_message(chat_id, result, direction="out")
+            return
         domain = text.strip()
         _notice(chat_id, "🔎 Проверяю домен, секунду...")
         result = domain_service.check_domain(domain)
+        history.add_entry(chat_id, domain.strip().lower())
         reply_text = f"✅ <b>Результат проверки: {_h(domain)}</b>\n\n{result}"
         buttons = [
             [telegram_api.make_inline_button(f"👁️ Отслеживать", f"watch_{domain}")],
@@ -346,7 +428,6 @@ def _handle_text(chat_id: int, text: str, message: dict) -> None:
         reply_markup = telegram_api.make_inline_keyboard(buttons)
         telegram_api.send_message(chat_id, reply_text, reply_markup=reply_markup)
         message_logger.log_message(chat_id, reply_text, direction="out")
-        user_state.clear_state(chat_id)
         return
 
     if state == "waiting_keyword_search":
@@ -383,12 +464,16 @@ def _handle_text(chat_id: int, text: str, message: dict) -> None:
         user_state.clear_state(chat_id)
         text = (
             "👋 <b>Привет!</b> Я бот для проверки доменов.\n\n"
+            "Команды: /check /search /watch /history /export /me\n"
+            "В /check можно указать несколько доменов через пробел.\n\n"
             "Используй кнопки ниже для навигации:"
         )
         buttons = [
             [telegram_api.make_inline_button("✅ Проверить домен", "menu_check")],
             [telegram_api.make_inline_button("🔍 Найти домены", "menu_search")],
             [telegram_api.make_inline_button("👁️ Отслеживание", "menu_watch")],
+            [telegram_api.make_inline_button("🕓 История", "menu_history")],
+            [telegram_api.make_inline_button("📤 Экспорт списка", "menu_export")],
             [telegram_api.make_inline_button("🪪 Мой профиль", "menu_profile")],
         ]
         reply_markup = telegram_api.make_inline_keyboard(buttons)
@@ -418,17 +503,42 @@ def _handle_text(chat_id: int, text: str, message: dict) -> None:
         _handle_text(chat_id, "/start", message)
         return
 
+    if lower.startswith("/history"):
+        stats.inc("commands")
+        text_out, buttons = _history_screen(chat_id)
+        reply_markup = telegram_api.make_inline_keyboard(buttons)
+        telegram_api.send_message(chat_id, text_out, reply_markup=reply_markup)
+        message_logger.log_message(chat_id, text_out, direction="out")
+        return
+
+    if lower.startswith("/export"):
+        stats.inc("commands")
+        _export_watchlist(chat_id)
+        return
+
     if lower.startswith("/check"):
         stats.inc("commands")
         parts = text.split(maxsplit=1)
         if len(parts) < 2:
             user_state.set_state(chat_id, "waiting_domain_check")
-            _reply(chat_id, "🔎 <b>Введите домен для проверки</b>\n\nПример: <code>google.com</code>")
+            _reply(chat_id, "🔎 <b>Введите домен для проверки</b>\n\nПример: <code>google.com</code>\nМожно несколько через пробел.")
             return
-        domain = parts[1].strip()
+        args = parts[1].replace(",", " ").split()
         stats.inc("domains_checked")
+        if len(args) > 1:
+            _notice(chat_id, "🔎 Проверяю домены, секунду...")
+            result = domain_service.check_domains_bulk(args)
+            for d in args:
+                history.add_entry(chat_id, d.strip().lower().strip(","))
+            buttons = [[telegram_api.make_inline_button("← Меню", "menu")]]
+            reply_markup = telegram_api.make_inline_keyboard(buttons)
+            telegram_api.send_message(chat_id, result, reply_markup=reply_markup)
+            message_logger.log_message(chat_id, result, direction="out")
+            return
+        domain = args[0].strip()
         _notice(chat_id, "🔎 Проверяю домен, секунду...")
         result = domain_service.check_domain(domain)
+        history.add_entry(chat_id, domain.lower())
         reply_text = f"✅ <b>Результат проверки: {_h(domain)}</b>\n\n{result}"
         buttons = [
             [telegram_api.make_inline_button(f"👁️ Отслеживать", f"watch_{domain}")],
