@@ -1,3 +1,4 @@
+import datetime
 import unittest
 from unittest.mock import patch
 
@@ -40,6 +41,45 @@ class DomainServiceTests(unittest.TestCase):
         self.assertEqual(calls, ["taken-example.com", "free-example.com"])
         self.assertIn("free-example.com", result)
         self.assertNotIn("taken-example.com", result)
+
+
+class ExpiryAndBulkTests(unittest.TestCase):
+    def test_parse_expiry_handles_list_and_none(self):
+        d = datetime.datetime(2027, 3, 15)
+        self.assertEqual(domain_service._parse_expiry(d), "15.03.2027")
+        self.assertEqual(domain_service._parse_expiry([d, d]), "15.03.2027")
+        self.assertEqual(domain_service._parse_expiry(None), "")
+
+    def test_bulk_check_summary(self):
+        def fake_lookup(domain):
+            if domain == "free.com":
+                return {"available": True, "source": "rdap", "error": None}
+            return {"available": False, "source": "rdap", "error": None, "expires": "01.01.2030"}
+
+        with patch.object(domain_service, "_real_availability_lookup", side_effect=fake_lookup):
+            with patch.object(domain_service.time, "sleep"):
+                res = domain_service.check_domains_bulk(["free.com", "taken.com"])
+
+        self.assertIn("free.com", res)
+        self.assertIn("свободен", res)
+        self.assertIn("taken.com", res)
+        self.assertIn("занят", res)
+
+    def test_bulk_check_respects_limit(self):
+        domains = [f"d{i}.com" for i in range(20)]
+        seen = []
+
+        def fake_lookup(domain):
+            seen.append(domain)
+            return {"available": True, "source": "rdap", "error": None}
+
+        with patch.dict(domain_service.CONFIG, {"bulk_check_limit": 5}):
+            with patch.object(domain_service, "_real_availability_lookup", side_effect=fake_lookup):
+                with patch.object(domain_service.time, "sleep"):
+                    res = domain_service.check_domains_bulk(domains)
+
+        self.assertEqual(len(seen), 5)
+        self.assertIn("пропущено", res)
 
 
 if __name__ == "__main__":
