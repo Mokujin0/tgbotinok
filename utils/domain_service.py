@@ -113,6 +113,19 @@ def generate_similar_names(keyword: str) -> list[str]:
     return names
 
 
+def _parse_expiry(value) -> str:
+    if not value:
+        return ""
+    if isinstance(value, (list, tuple)):
+        value = value[0] if value else None
+    if not value:
+        return ""
+    try:
+        return value.strftime("%d.%m.%Y")
+    except AttributeError:
+        return str(value)
+
+
 def _local_whois_lookup(domain: str) -> dict:
     if whois is None:
         return {
@@ -125,7 +138,12 @@ def _local_whois_lookup(domain: str) -> dict:
     try:
         w = whois.whois(domain, timeout=timeout)
         if w.domain_name:
-            return {"available": False, "source": "local whois", "error": None}
+            return {
+                "available": False,
+                "source": "local whois",
+                "error": None,
+                "expires": _parse_expiry(getattr(w, "expiration_date", None)),
+            }
         return {"available": True, "source": "local whois", "error": None}
     except Exception as e:
         err_msg = str(e).lower()
@@ -173,6 +191,9 @@ def _format_status(prefix: str, result: dict) -> str:
     if available is True:
         return f"{prefix}: ✅ <b>Свободен</b>\n"
     if available is False:
+        expires = result.get("expires")
+        if expires:
+            return f"{prefix}: 🔒 <b>Занят</b> (до {html.escape(str(expires))})\n"
         return f"{prefix}: 🔒 <b>Занят</b>\n"
     return f"{prefix}: ❓ статус неизвестен\n"
 
@@ -201,6 +222,46 @@ def check_domain(domain: str) -> str:
         res_text += "\nℹ️ Sandbox не отражает реальные регистрации и используется только для диагностики API.\n"
 
     return res_text
+
+
+def check_domains_bulk(domains: list[str]) -> str:
+    cleaned = []
+    seen = set()
+    for d in domains:
+        d = d.strip().lower().strip(",")
+        if d and d not in seen:
+            seen.add(d)
+            cleaned.append(d)
+
+    if not cleaned:
+        return "❌ Укажите домены: <code>/check site1.com site2.net</code>"
+
+    limit = int(CONFIG.get("bulk_check_limit", 10))
+    extra = len(cleaned) - limit
+    cleaned = cleaned[:limit]
+
+    lines = []
+    for i, d in enumerate(cleaned):
+        if not is_valid_domain(d):
+            lines.append(f"❓ <code>{html.escape(d)}</code> — некорректный домен")
+            continue
+        if i > 0:
+            time.sleep(WHOIS_DELAY)
+        r = _real_availability_lookup(d)
+        avail = r.get("available")
+        if avail is True:
+            lines.append(f"✅ <code>{html.escape(d)}</code> — свободен")
+        elif avail is False:
+            expires = r.get("expires")
+            tail = f" (до {html.escape(str(expires))})" if expires else ""
+            lines.append(f"🔒 <code>{html.escape(d)}</code> — занят{tail}")
+        else:
+            lines.append(f"❓ <code>{html.escape(d)}</code> — статус неизвестен")
+
+    res = "📋 <b>Результаты проверки</b>\n\n" + "\n".join(lines)
+    if extra > 0:
+        res += f"\n\nℹ️ Проверено первые {limit}, пропущено ещё {extra}."
+    return res
 
 
 def search_available(keyword: str) -> str:
