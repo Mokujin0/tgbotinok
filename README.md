@@ -75,10 +75,12 @@ cp .env.example .env
 |---------|----------|
 | `/start` | Приветствие |
 | `/me` | Ваш chat_id и username |
-| `/check domain.com` | Проверка WHOIS + Namecheap |
+| `/check domain.com` | Проверка домена (RDAP + WHOIS + Namecheap). Можно несколько через пробел |
 | `/search keyword` | Поиск свободных похожих доменов |
 | `/watch domain.com` | Уведомление при освобождении |
 | `/unwatch domain.com` | Убрать из отслеживания |
+| `/history` | Последние проверенные домены |
+| `/export` | Выгрузить список отслеживания файлом |
 
 ## API
 
@@ -89,4 +91,20 @@ cp .env.example .env
 
 Источники доступности опрашиваются по очереди: сначала бесплатный **RDAP**, затем WhoisXML, Namecheap и локальный WHOIS. Опрос прекращается на первом однозначном ответе.
 
-`WHOIS_API_KEY` (WhoisXML) и ключи Namecheap **необязательны** — без них бот работает на RDAP + локальном WHOIS бесплатно. Namecheap Sandbox нужен только для проверки интеграции: он не отражает реальные регистрации и не должен быть источником истины для `/search` и отслеживания.
+`WHOIS_API_KEY` (WhoisXML) и ключи Namecheap **необязательны** — без них бот работает на RDAP + локальном WHOIS бесплатно.
+
+### Реальный Namecheap API (вместо sandbox)
+
+По умолчанию `NAMECHEAP_API_URL` может указывать на sandbox (`api.sandbox.namecheap.com`) — он не отражает реальные регистрации, поэтому **в решениях о доступности не используется**. Чтобы Namecheap стал полноценной альтернативой RDAP/WHOIS:
+
+1. Включите API Access в кабинете Namecheap (Profile → Tools → API Access). Требуется баланс ≥ $50, либо ≥ 20 доменов, либо траты ≥ $50.
+2. Добавьте IP сервера в whitelist (он же `NAMECHEAP_CLIENT_IP`).
+3. В `.env` укажите production endpoint:
+   ```
+   NAMECHEAP_API_URL=https://api.namecheap.com/xml.response
+   NAMECHEAP_API_USER=ваш_логин
+   NAMECHEAP_API_KEY=ваш_ключ
+   NAMECHEAP_CLIENT_IP=ваш_whitelisted_ip
+   ```
+
+Как только URL не содержит `sandbox`, бот автоматически начинает учитывать Namecheap при проверке и поиске.

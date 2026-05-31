@@ -12,3 +12,4 @@ data/daily_stats.json
 data/user_states.json
 data/users.csv
 data/watchlist.json
+data/history.json
