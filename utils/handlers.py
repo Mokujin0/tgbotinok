@@ -261,10 +261,16 @@ def _handle_callback(callback_query: dict) -> None:
         result = domain_service.check_domain(domain)
         history.add_entry(chat_id, domain.lower())
         reply_text = f"✅ <b>Проверка домена: {_h(domain)}</b>\n\n{result}"
+        buttons = [
+            [telegram_api.make_inline_button("👁️ Отслеживать", f"watch_{domain}")],
+            [telegram_api.make_inline_button("🏠 Главное меню", "menu")],
+        ]
+        reply_markup = telegram_api.make_inline_keyboard(buttons)
         if message_id and chat_id:
-            _safe_edit(chat_id, message_id, reply_text)
+            _safe_edit(chat_id, message_id, reply_text, reply_markup)
         else:
-            _reply(chat_id, reply_text)
+            telegram_api.send_message(chat_id, reply_text, reply_markup=reply_markup)
+            message_logger.log_message(chat_id, reply_text, direction="out")
 
     elif data.startswith("unwatch_"):
         domain = data.replace("unwatch_", "")
